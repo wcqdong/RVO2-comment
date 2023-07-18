@@ -154,27 +154,33 @@ std::size_t RVOSimulator::addAgent(const Vector2 &position, float neighborDist,
 
 std::size_t RVOSimulator::addObstacle(const std::vector<Vector2> &vertices) {
   if (vertices.size() > 1U) {
+    // 起点
     const std::size_t obstacleNo = obstacles_.size();
 
+    // 每个顶点为Obstacle
     for (std::size_t i = 0U; i < vertices.size(); ++i) {
       Obstacle *const obstacle = new Obstacle();
       obstacle->point_ = vertices[i];
 
+      // 相同vertices内的互相连接
       if (i != 0U) {
         obstacle->previous_ = obstacles_.back();
         obstacle->previous_->next_ = obstacle;
       }
-
+      // 相同vertices内的互相连接
       if (i == vertices.size() - 1U) {
         obstacle->next_ = obstacles_[obstacleNo];
         obstacle->next_->previous_ = obstacle;
       }
 
+      // vertices[i]到vertices[i + 1]的方向
       obstacle->direction_ = normalize(
           vertices[(i == vertices.size() - 1U ? 0U : i + 1U)] - vertices[i]);
 
+      // 是一条线段，该obstacle为凸点
       if (vertices.size() == 2U) {
         obstacle->isConvex_ = true;
+      // 如果是一个形状，是否为凸点，叉乘
       } else {
         obstacle->isConvex_ =
             leftOf(vertices[i == 0U ? vertices.size() - 1U : i - 1U],
@@ -182,6 +188,7 @@ std::size_t RVOSimulator::addObstacle(const std::vector<Vector2> &vertices) {
                    vertices[i == vertices.size() - 1U ? 0U : i + 1U]) >= 0.0F;
       }
 
+      // 自增id
       obstacle->id_ = obstacles_.size();
 
       obstacles_.push_back(obstacle);
@@ -302,6 +309,7 @@ bool RVOSimulator::queryVisibility(const Vector2 &point1, const Vector2 &point2,
   return kdTree_->queryVisibility(point1, point2, radius);
 }
 
+/// 设置agent默认配置
 void RVOSimulator::setAgentDefaults(float neighborDist,
                                     std::size_t maxNeighbors, float timeHorizon,
                                     float timeHorizonObst, float radius,

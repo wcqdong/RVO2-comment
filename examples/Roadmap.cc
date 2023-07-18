@@ -77,9 +77,11 @@ class RoadmapVertex {
  public:
   RVO::Vector2 position;
   std::vector<int> neighbors;
+  /// 到4个目的地的距离，此demo选取了4个目的地，distToGoal用来保存到邻居的代价（距离），通过邻居最终通向终点
   std::vector<float> distToGoal;
 };
 
+/// 布置剧情，初始化环境
 void setupScenario(
     RVO::RVOSimulator *simulator,
     std::vector<RoadmapVertex> &roadmap, /* NOLINT(runtime/references) */
@@ -93,6 +95,7 @@ void setupScenario(
 
   /* Add polygonal obstacles, specifying their vertices in counterclockwise
    * order.*/
+  // 1. 场景里放入一些障碍物
   std::vector<RVO::Vector2> obstacle1;
   std::vector<RVO::Vector2> obstacle2;
   std::vector<RVO::Vector2> obstacle3;
@@ -124,9 +127,13 @@ void setupScenario(
   simulator->addObstacle(obstacle4);
 
   /* Process the obstacles so that they are accounted for in the simulation. */
+  // 1.1 构建Kdtree
+  // 按照障碍物的边进行空间划分
   simulator->processObstacles();
 
   /* Add roadmap vertices. */
+  // 2. 设置一些路点
+  // 路点为agent移动的路径，可以看做是从寻路出来的路径点
   RoadmapVertex v;
 
   /* Add the goal positions of agents. */
@@ -173,6 +180,7 @@ void setupScenario(
   v.position = RVO::Vector2(42.0F, 42.0F);
   roadmap.push_back(v);
 
+  // 3. 场景中加入一些agent
   /* Specify the default parameters for agents that are subsequently added. */
   simulator->setAgentDefaults(15.0F, 10U, 5.0F, 5.0F, 2.0F, 2.0F);
 
@@ -180,8 +188,10 @@ void setupScenario(
    * opposite side of the environment (roadmap vertices). */
   for (std::size_t i = 0U; i < 5U; ++i) {
     for (std::size_t j = 0U; j < 5U; ++j) {
+      // 加入agent
       simulator->addAgent(RVO::Vector2(55.0F + static_cast<float>(i) * 10.0F,
                                        55.0F + static_cast<float>(j) * 10.0F));
+      // 意味着刚才加入的agent的终点为roadmap[0]
       goals.push_back(0);
 
       simulator->addAgent(RVO::Vector2(-55.0F - static_cast<float>(i) * 10.0F,
@@ -200,6 +210,7 @@ void setupScenario(
 }
 
 #if RVO_OUTPUT_TIME_AND_POSITIONS
+/// 输出信息
 void updateVisualization(RVO::RVOSimulator *simulator) {
   /* Output the current global time. */
   std::cout << simulator->getGlobalTime();
@@ -213,6 +224,7 @@ void updateVisualization(RVO::RVOSimulator *simulator) {
 }
 #endif /* RVO_OUTPUT_TIME_AND_POSITIONS */
 
+/// 前四个点
 void buildRoadmap(
     RVO::RVOSimulator *simulator,
     std::vector<RoadmapVertex> &roadmap) { /* NOLINT(runtime/references) */
@@ -222,6 +234,7 @@ void buildRoadmap(
 #endif /* _OPENMP */
   for (int i = 0; i < static_cast<int>(roadmap.size()); ++i) {
     for (int j = 0; j < static_cast<int>(roadmap.size()); ++j) {
+      // 如果路点i可以看见路点j则把j加入到roadmap[i].neighbors
       if (simulator->queryVisibility(roadmap[i].position, roadmap[j].position,
                                      simulator->getAgentRadius(0U))) {
         roadmap[i].neighbors.push_back(j);
@@ -229,6 +242,7 @@ void buildRoadmap(
     }
 
     /* Initialize the distance to each of the four goal vertices at infinity. */
+    // size设置为4，因为此demo有4个目的地，不同的agent去到自己的目的地
     roadmap[i].distToGoal.resize(4U, std::numeric_limits<float>::infinity());
   }
 
@@ -237,14 +251,17 @@ void buildRoadmap(
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif /* _OPENMP */
+  // roadmap里的前4个路点为终点，遍历这4个终点，寻找各个路点到自己的最短连通路径
   for (int i = 0; i < 4; ++i) {
     std::multimap<float, int> Q;
     std::vector<std::multimap<float, int>::iterator> posInQ(roadmap.size(),
                                                             Q.end());
 
+    // 到达终点（到达自己）的距离是0
     roadmap[i].distToGoal[i] = 0.0F;
     posInQ[i] = Q.insert(std::make_pair(0.0F, i));
 
+    // A*，静态构建每个路点到达终点的最短路径
     while (!Q.empty()) {
       const int u = Q.begin()->second;
       Q.erase(Q.begin());
@@ -252,9 +269,10 @@ void buildRoadmap(
 
       for (int j = 0; j < static_cast<int>(roadmap[u].neighbors.size()); ++j) {
         const int v = roadmap[u].neighbors[j];
-        const float distUV =
-            RVO::abs(roadmap[v].position - roadmap[u].position);
+        // 和邻居之间的距离
+        const float distUV = RVO::abs(roadmap[v].position - roadmap[u].position);
 
+        // 计算邻居v经过u到i的虽短路径
         if (roadmap[v].distToGoal[i] > roadmap[u].distToGoal[i] + distUV) {
           roadmap[v].distToGoal[i] = roadmap[u].distToGoal[i] + distUV;
 
@@ -283,34 +301,39 @@ void setPreferredVelocities(RVO::RVOSimulator *simulator,
     float minDist = std::numeric_limits<float>::infinity();
     int minVertex = -1;
 
+    // 选出到达目标点最短的路点的索引
     for (int j = 0; j < static_cast<int>(roadmap.size()); ++j) {
-      if (RVO::abs(roadmap[j].position - simulator->getAgentPosition(i)) +
-                  roadmap[j].distToGoal[goals[i]] <
-              minDist &&
+      // 路点到agent的距离 + 路点到目标点的距离
+      if (RVO::abs(roadmap[j].position - simulator->getAgentPosition(i)) + roadmap[j].distToGoal[goals[i]] < minDist &&
           simulator->queryVisibility(simulator->getAgentPosition(i),
                                      roadmap[j].position,
-                                     simulator->getAgentRadius(i))) {
-        minDist =
-            RVO::abs(roadmap[j].position - simulator->getAgentPosition(i)) +
-            roadmap[j].distToGoal[goals[i]];
+                                     simulator->getAgentRadius(i)))
+      {
+        minDist = RVO::abs(roadmap[j].position - simulator->getAgentPosition(i)) + roadmap[j].distToGoal[goals[i]];
         minVertex = j;
       }
     }
 
+    // 总能找打一个最短的，所以这种情况不会出现
     if (minVertex == -1) {
       /* No roadmap vertex is visible; should not happen. */
+      // 速度设置为0
       simulator->setAgentPrefVelocity(i, RVO::Vector2(0.0F, 0.0F));
     } else {
-      if (RVO::absSq(roadmap[minVertex].position -
-                     simulator->getAgentPosition(i)) == 0.0F) {
+      // 好巧不巧，agent就在路点上
+      if (RVO::absSq(roadmap[minVertex].position - simulator->getAgentPosition(i)) == 0.0F) {
+        // 更巧了，这个路点就是目标点
         if (minVertex == goals[i]) {
+          // 设置速度为0，已到达
           simulator->setAgentPrefVelocity(i, RVO::Vector2());
         } else {
+          // 设置速度方向，朝向终点
           simulator->setAgentPrefVelocity(
               i, RVO::normalize(roadmap[goals[i]].position -
                                 simulator->getAgentPosition(i)));
         }
       } else {
+        // 设置速度方向，朝向路点
         simulator->setAgentPrefVelocity(
             i, RVO::normalize(roadmap[minVertex].position -
                               simulator->getAgentPosition(i)));
@@ -318,11 +341,10 @@ void setPreferredVelocities(RVO::RVOSimulator *simulator,
     }
 
     /* Perturb a little to avoid deadlocks due to perfect symmetry. */
-    float angle = static_cast<float>(std::rand()) * RVO_TWO_PI /
-                  static_cast<float>(RAND_MAX);
-    float dist = static_cast<float>(std::rand()) * 0.0001F /
-                 static_cast<float>(RAND_MAX);
+    float angle = static_cast<float>(std::rand()) * RVO_TWO_PI / static_cast<float>(RAND_MAX);
+    float dist = static_cast<float>(std::rand()) * 0.0001F / static_cast<float>(RAND_MAX);
 
+    // 给当前的速度增加一些抖动，防止互相避让导致死锁
     simulator->setAgentPrefVelocity(
         i, simulator->getAgentPrefVelocity(i) +
                dist * RVO::Vector2(std::cos(angle), std::sin(angle)));
@@ -334,6 +356,7 @@ bool reachedGoal(RVO::RVOSimulator *simulator,
                  const std::vector<int> &goals) {
   /* Check if all agents have reached their goals. */
   for (std::size_t i = 0U; i < simulator->getNumAgents(); ++i) {
+    // 有agent到goal的距离超过400，则没到达
     if (RVO::absSq(simulator->getAgentPosition(i) -
                    roadmap[goals[i]].position) > 400.0F) {
       return false;
@@ -343,7 +366,6 @@ bool reachedGoal(RVO::RVOSimulator *simulator,
   return true;
 }
 } /* namespace */
-
 int main() {
   /* Store the roadmap. */
   std::vector<RoadmapVertex> roadmap;
@@ -363,6 +385,7 @@ int main() {
   /* Perform and manipulate the simulation. */
   do {
 #if RVO_OUTPUT_TIME_AND_POSITIONS
+    /// 输出信息
     updateVisualization(simulator);
 #endif /* RVO_OUTPUT_TIME_AND_POSITIONS */
     setPreferredVelocities(simulator, roadmap, goals);

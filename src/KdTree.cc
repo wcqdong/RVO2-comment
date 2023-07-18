@@ -166,10 +166,12 @@ KdTree::~KdTree() { deleteObstacleTree(obstacleTree_); }
 
 void KdTree::buildAgentTree() {
   if (agents_.size() < simulator_->agents_.size()) {
+    // 把simulator_->agents_后加进来的加入到agents_，simulator_->agents_比agents_长出来的后面几个元素就是新加进来的
     agents_.insert(agents_.end(),
                    simulator_->agents_.begin() +
                        static_cast<std::ptrdiff_t>(agents_.size()),
                    simulator_->agents_.end());
+    // 扩容2*size-1，可以看出，leaf节点保存数据，root和internal为无数据节点
     agentTree_.resize(2U * agents_.size() - 1U);
   }
 
@@ -185,6 +187,7 @@ void KdTree::buildAgentTreeRecursive(std::size_t begin, std::size_t end,
   agentTree_[node].minX = agentTree_[node].maxX = agents_[begin]->position_.x();
   agentTree_[node].minY = agentTree_[node].maxY = agents_[begin]->position_.y();
 
+  // 从begin到end，所有点的包围盒范围
   for (std::size_t i = begin + 1U; i < end; ++i) {
     agentTree_[node].maxX =
         std::max(agentTree_[node].maxX, agents_[i]->position_.x());
@@ -196,8 +199,10 @@ void KdTree::buildAgentTreeRecursive(std::size_t begin, std::size_t end,
         std::min(agentTree_[node].minY, agents_[i]->position_.y());
   }
 
+  // 一个node空间内agent数量10个以内
   if (end - begin > RVO_MAX_LEAF_SIZE) {
     /* No leaf node. */
+    // 把最长的边（x or y)一分为二
     const bool isVertical = agentTree_[node].maxX - agentTree_[node].minX >
                             agentTree_[node].maxY - agentTree_[node].minY;
     const float splitValue =
@@ -207,6 +212,7 @@ void KdTree::buildAgentTreeRecursive(std::size_t begin, std::size_t end,
     std::size_t left = begin;
     std::size_t right = end;
 
+    // 计算splitValue两遍各有多少个agent
     while (left < right) {
       while (left < right &&
              (isVertical ? agents_[left]->position_.x()
@@ -219,7 +225,7 @@ void KdTree::buildAgentTreeRecursive(std::size_t begin, std::size_t end,
                          : agents_[right - 1U]->position_.y()) >= splitValue) {
         --right;
       }
-
+      // 索引号在前面的比splitValue大，索引号在后面的比splitvalue小，对调一下
       if (left < right) {
         std::swap(agents_[left], agents_[right - 1U]);
         ++left;
@@ -232,7 +238,15 @@ void KdTree::buildAgentTreeRecursive(std::size_t begin, std::size_t end,
       ++right;
     }
 
+    // 设置当前node左孩子和右孩子在agentTree_中的索引
+    // agentTree_.length不是节点个数，而是2*agents_.size()-1，一个满二叉树的数量
+    // 那么node的左孩子设置为node+1这个节点
     agentTree_[node].left = node + 1U;
+    // 要给左孩子预留出来空间，这个空间占多少呢？
+    // 左孩子有left-begin元素，一个满二叉树的节点数量为2*(left-begin)-1个
+    // 也就是说把agentTree_[node].left作为root，则占用2*(left-begin)-1个
+    // 所以agentTree_[node].right为(2*(left-begin)-1) + 1=2*(left-begin)
+    // 最后在加上node
     agentTree_[node].right = node + 2U * (left - begin);
 
     buildAgentTreeRecursive(begin, left, agentTree_[node].left);
@@ -240,6 +254,7 @@ void KdTree::buildAgentTreeRecursive(std::size_t begin, std::size_t end,
   }
 }
 
+/// 构建Kdtree
 void KdTree::buildObstacleTree() {
   deleteObstacleTree(obstacleTree_);
 
@@ -260,29 +275,38 @@ KdTree::ObstacleTreeNode *KdTree::buildObstacleTreeRecursive(
       std::size_t leftSize = 0U;
       std::size_t rightSize = 0U;
 
+      // obstacleI1->obstacleI2的向量
       const Obstacle *const obstacleI1 = obstacles[i];
       const Obstacle *const obstacleI2 = obstacleI1->next_;
 
+      // 尝试obstacleI1->obstacleI2向量是否可作为最优分割线，向量左右顶点数越相近，越适合做分割线，也就是Kdtree的node
       /* Compute optimal split node. */
       for (std::size_t j = 0U; j < obstacles.size(); ++j) {
+        // 这种判断情况下，obstacleJ1可能是obstacleI1->next_
         if (i != j) {
           const Obstacle *const obstacleJ1 = obstacles[j];
           const Obstacle *const obstacleJ2 = obstacleJ1->next_;
 
+          // 求obstacleJ1是否在obstacleI1->obstacleI2的左边
           const float j1LeftOfI = leftOf(obstacleI1->point_, obstacleI2->point_,
                                          obstacleJ1->point_);
+          // 求obstacleJ2是否在obstacleI1->obstacleI2的左边
           const float j2LeftOfI = leftOf(obstacleI1->point_, obstacleI2->point_,
                                          obstacleJ2->point_);
 
+          // obstacleJ1和obstacleJ2都在obstacleI1->obstacleI2的左边
           if (j1LeftOfI >= -RVO_EPSILON && j2LeftOfI >= -RVO_EPSILON) {
             ++leftSize;
+            // obstacleJ1和obstacleJ2都在obstacleI1->obstacleI2的右边
           } else if (j1LeftOfI <= RVO_EPSILON && j2LeftOfI <= RVO_EPSILON) {
             ++rightSize;
+          // obstacleJ1、obstacleJ2在向量obstacleI1->obstacleI2的两侧
           } else {
             ++leftSize;
             ++rightSize;
           }
 
+          // 左右的顶点个数已经不够平均了，break跳出
           if (std::make_pair(std::max(leftSize, rightSize),
                              std::min(leftSize, rightSize)) >=
               std::make_pair(std::max(minLeft, minRight),
@@ -292,6 +316,7 @@ KdTree::ObstacleTreeNode *KdTree::buildObstacleTreeRecursive(
         }
       }
 
+      // 如果发现左右顶点数量更平均的分割线，则记录i为最优分割线optimalSplit
       if (std::make_pair(std::max(leftSize, rightSize),
                          std::min(leftSize, rightSize)) <
           std::make_pair(std::max(minLeft, minRight),
@@ -310,6 +335,7 @@ KdTree::ObstacleTreeNode *KdTree::buildObstacleTreeRecursive(
     std::size_t rightCounter = 0U;
     const std::size_t i = optimalSplit;
 
+    // 选中i为最优分割线
     const Obstacle *const obstacleI1 = obstacles[i];
     const Obstacle *const obstacleI2 = obstacleI1->next_;
 
@@ -328,6 +354,7 @@ KdTree::ObstacleTreeNode *KdTree::buildObstacleTreeRecursive(
         } else if (j1LeftOfI <= RVO_EPSILON && j2LeftOfI <= RVO_EPSILON) {
           rightObstacles[rightCounter++] = obstacles[j];
         } else {
+          // 在两侧，则新产生一个点
           /* Split obstacle j. */
           const float t = det(obstacleI2->point_ - obstacleI1->point_,
                               obstacleJ1->point_ - obstacleI1->point_) /
@@ -361,7 +388,9 @@ KdTree::ObstacleTreeNode *KdTree::buildObstacleTreeRecursive(
       }
     }
 
+    // 设置obstacleI1为Kdtree的最优分割点
     node->obstacle = obstacleI1;
+    // 左边、右边、继续递归
     node->left = buildObstacleTreeRecursive(leftObstacles);
     node->right = buildObstacleTreeRecursive(rightObstacles);
 
@@ -387,11 +416,9 @@ void KdTree::deleteObstacleTree(ObstacleTreeNode *node) {
   }
 }
 
-void KdTree::queryAgentTreeRecursive(Agent *agent, float &rangeSq,
-                                     std::size_t node) const {
+void KdTree::queryAgentTreeRecursive(Agent *agent, float &rangeSq, std::size_t node) const {
   if (agentTree_[node].end - agentTree_[node].begin <= RVO_MAX_LEAF_SIZE) {
-    for (std::size_t i = agentTree_[node].begin; i < agentTree_[node].end;
-         ++i) {
+    for (std::size_t i = agentTree_[node].begin; i < agentTree_[node].end; ++i) {
       agent->insertAgentNeighbor(agents_[i], rangeSq);
     }
   } else {
@@ -451,11 +478,14 @@ void KdTree::queryObstacleTreeRecursive(Agent *agent, float rangeSq,
     queryObstacleTreeRecursive(
         agent, rangeSq, agentLeftOfLine >= 0.0F ? node->left : node->right);
 
+    // 到线的距离的平方
     const float distSqLine = agentLeftOfLine * agentLeftOfLine /
                              absSq(obstacle2->point_ - obstacle1->point_);
 
     if (distSqLine < rangeSq) {
+      // 在line的右边，为什么？？
       if (agentLeftOfLine < 0.0F) {
+        // 仅当agent在障碍物右边且能看见障碍物时才加到Neighbor
         /* Try obstacle at this node only if agent is on right side of obstacle
          * and can see obstacle. */
         agent->insertObstacleNeighbor(node->obstacle, rangeSq);
@@ -468,11 +498,15 @@ void KdTree::queryObstacleTreeRecursive(Agent *agent, float rangeSq,
   }
 }
 
+
 bool KdTree::queryVisibility(const Vector2 &vector1, const Vector2 &vector2,
                              float radius) const {
   return queryVisibilityRecursive(vector1, vector2, radius, obstacleTree_);
 }
 
+/// 检查vector1是否能看见vector2
+/// 何为看见？就是vector1和vector2之间没有障碍物，KdTree已经按照障碍物的边划分，在障碍物边的两侧即有可能互相看不见，在同侧则看得见
+/// 按照KdTree递归二分空间查找，如果在所有二分查找的node分割线的同侧，直到已经没有子node了，则两点可见
 bool KdTree::queryVisibilityRecursive(const Vector2 &vector1,
                                       const Vector2 &vector2, float radius,
                                       const ObstacleTreeNode *node) const {
@@ -484,10 +518,19 @@ bool KdTree::queryVisibilityRecursive(const Vector2 &vector1,
         leftOf(obstacle1->point_, obstacle2->point_, vector1);
     const float q2LeftOfI =
         leftOf(obstacle1->point_, obstacle2->point_, vector2);
+    // 距离的平方  分之一
     const float invLengthI =
         1.0F / absSq(obstacle2->point_ - obstacle1->point_);
 
+    // q1LeftOfI * q1LeftOfI * invLengthI
+    // 为vector1到obstacle1->obstacle2的距离
+    // q1LeftOfI为平行四边形面积=底*高，invLengthI为底，则算出来的值为高，因为是用的是底的平方（invLengthI），所以都用平方
+
+    // 都在分割线左边
     if (q1LeftOfI >= 0.0F && q2LeftOfI >= 0.0F) {
+      // 两种情况满足条件
+      // 1. vector1和vector2完全在该node分割线的左边，即q1LeftOfI * q1LeftOfI * invLengthI >= radius * radius && q2LeftOfI * q2LeftOfI * invLengthI >= radius * radius
+      // 2. vector1和vector2因为有半径，没完全在node分割线左边，那么也要检查右侧，即queryVisibilityRecursive(vector1, vector2, radius, node->right)
       return queryVisibilityRecursive(vector1, vector2, radius, node->left) &&
              ((q1LeftOfI * q1LeftOfI * invLengthI >= radius * radius &&
                q2LeftOfI * q2LeftOfI * invLengthI >= radius * radius) ||
@@ -501,23 +544,28 @@ bool KdTree::queryVisibilityRecursive(const Vector2 &vector1,
               queryVisibilityRecursive(vector1, vector2, radius, node->left));
     }
 
+    // 这个是什么情况？从左边能看到右边？？怎么解释
     if (q1LeftOfI >= 0.0F && q2LeftOfI <= 0.0F) {
       /* One can see through obstacle from left to right. */
       return queryVisibilityRecursive(vector1, vector2, radius, node->left) &&
              queryVisibilityRecursive(vector1, vector2, radius, node->right);
     }
 
+    // 不在障碍物同侧的情况
+
     const float point1LeftOfQ = leftOf(vector1, vector2, obstacle1->point_);
     const float point2LeftOfQ = leftOf(vector1, vector2, obstacle2->point_);
     const float invLengthQ = 1.0F / absSq(vector2 - vector1);
 
-    return point1LeftOfQ * point2LeftOfQ >= 0.0F &&
-           point1LeftOfQ * point1LeftOfQ * invLengthQ > radius * radius &&
-           point2LeftOfQ * point2LeftOfQ * invLengthQ > radius * radius &&
-           queryVisibilityRecursive(vector1, vector2, radius, node->left) &&
-           queryVisibilityRecursive(vector1, vector2, radius, node->right);
+    // 检查vector1和vector2之间是否有障碍物
+    return point1LeftOfQ * point2LeftOfQ >= 0.0F && // 障碍物在vector1和vector2的同侧 &&
+           point1LeftOfQ * point1LeftOfQ * invLengthQ > radius * radius && // 障碍物obstacle1到vector1 vector1的距离超过radius &&
+           point2LeftOfQ * point2LeftOfQ * invLengthQ > radius * radius && // 障碍物obstacle2到vector1 vector1的距离超过radius &&
+           queryVisibilityRecursive(vector1, vector2, radius, node->left) && // 左树 &&
+           queryVisibilityRecursive(vector1, vector2, radius, node->right); // 右树
   }
 
+  // 当前叶子节点为null，说明已经没有障碍物阻碍vector1和vector2了，所以返回true，可见
   return true;
 }
 } /* namespace RVO */

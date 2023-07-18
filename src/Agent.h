@@ -113,6 +113,7 @@ class Agent {
   std::vector<Line> orcaLines_;
   Vector2 newVelocity_;
   Vector2 position_;
+  // 首选速度
   Vector2 prefVelocity_;
   Vector2 velocity_;
   std::size_t id_;
