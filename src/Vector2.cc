@@ -121,7 +121,7 @@ std::ostream &operator<<(std::ostream &stream, const Vector2 &vector) {
 
 float abs(const Vector2 &vector) { return std::sqrt(vector * vector); }
 
-float absSq(const Vector2 &vector) { return vector * vector; }
+float absSq(const Vector2 &vector) { return vector  * vector; }
 
 float det(const Vector2 &vector1, const Vector2 &vector2) {
   return vector1.x() * vector2.y() - vector1.y() * vector2.x();

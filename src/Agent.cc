@@ -621,12 +621,14 @@ void Agent::insertAgentNeighbor(const Agent *agent, float &rangeSq) {
     const float distSq = absSq(position_ - agent->position_);
 
     if (distSq < rangeSq) {
+      // 已经超过最大个数，则不插入
       if (agentNeighbors_.size() < maxNeighbors_) {
         agentNeighbors_.push_back(std::make_pair(distSq, agent));
       }
 
       std::size_t i = agentNeighbors_.size() - 1U;
 
+      // 排序，插入适当的位置
       while (i != 0U && distSq < agentNeighbors_[i - 1U].first) {
         agentNeighbors_[i] = agentNeighbors_[i - 1U];
         --i;
@@ -634,7 +636,9 @@ void Agent::insertAgentNeighbor(const Agent *agent, float &rangeSq) {
 
       agentNeighbors_[i] = std::make_pair(distSq, agent);
 
+      // 超过最大邻居个数
       if (agentNeighbors_.size() == maxNeighbors_) {
+        // 邻居中最远的距离
         rangeSq = agentNeighbors_.back().first;
       }
     }
@@ -642,17 +646,28 @@ void Agent::insertAgentNeighbor(const Agent *agent, float &rangeSq) {
 }
 
 void Agent::insertObstacleNeighbor(const Obstacle *obstacle, float rangeSq) {
+  // 首先insertObstacleNeighbor的前提提交是agent在obstacle->obstacle右边（可看调用这个函数的地方)
+  // 以这个为前提看下面的代码
+
   const Obstacle *const nextObstacle = obstacle->next_;
 
+  // position_到线段obstacle->nextObstacle的距离
   float distSq = 0.0F;
+
+  // (position_ - obstacle->point_) * (nextObstacle->point_ - obstacle->point_)
+  // 点乘，position_ 在obstacle->nextObstacle线上的投影
+  // 除以obstacle->nextObstacle长度，结果r可以判断投影点是否在obstacle->nextObstacle线段上
   const float r = ((position_ - obstacle->point_) *
                    (nextObstacle->point_ - obstacle->point_)) /
                   absSq(nextObstacle->point_ - obstacle->point_);
 
+  // 不在线段上，小于0，角度大于90度，离obstacle更近
   if (r < 0.0F) {
     distSq = absSq(position_ - obstacle->point_);
+  // 不在线段上，大于1，角度小于90度，离nextObstacle更近
   } else if (r > 1.0F) {
     distSq = absSq(position_ - nextObstacle->point_);
+  // 在线段上，按r比例求到obstacle->nextObstacle的距离
   } else {
     distSq = absSq(position_ - (obstacle->point_ +
                                 r * (nextObstacle->point_ - obstacle->point_)));
@@ -663,6 +678,7 @@ void Agent::insertObstacleNeighbor(const Obstacle *obstacle, float rangeSq) {
 
     std::size_t i = obstacleNeighbors_.size() - 1U;
 
+    // 排序，把刚加入的obstacle按照distSq排序，distSq小的放在前面
     while (i != 0U && distSq < obstacleNeighbors_[i - 1U].first) {
       obstacleNeighbors_[i] = obstacleNeighbors_[i - 1U];
       --i;

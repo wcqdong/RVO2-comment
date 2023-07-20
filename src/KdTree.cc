@@ -415,13 +415,20 @@ void KdTree::deleteObstacleTree(ObstacleTreeNode *node) {
     delete node;
   }
 }
-
+/// 根据agentTree空间划分，找到与agent距离小于range的其他agent
 void KdTree::queryAgentTreeRecursive(Agent *agent, float &rangeSq, std::size_t node) const {
+  // node范围内的agent数小于RVO_MAX_LEAF_SIZE
   if (agentTree_[node].end - agentTree_[node].begin <= RVO_MAX_LEAF_SIZE) {
     for (std::size_t i = agentTree_[node].begin; i < agentTree_[node].end; ++i) {
       agent->insertAgentNeighbor(agents_[i], rangeSq);
     }
   } else {
+    // [a]
+    // 按搭理来说，agent要么在left，要么在right，也就是说下面的distSqLeft和distSqRight中必有一个为0
+    // 但是这里为什么多次一举的算了与left和right的box比较并求出距离box的距离呢，计算是否在某个box不就行了
+    // 因为在递归中可能出现agent既不在left也不在right，所以要分别计算distSqLeft和distSqRight，导致agent不在left和right的位置在[b]
+
+    // 与当前node的left比较，计算agent距离left的box的距离
     const float distLeftMinX = std::max(
         0.0F, agentTree_[agentTree_[node].left].minX - agent->position_.x());
     const float distLeftMaxX = std::max(
@@ -431,10 +438,12 @@ void KdTree::queryAgentTreeRecursive(Agent *agent, float &rangeSq, std::size_t n
     const float distLeftMaxY = std::max(
         0.0F, agent->position_.y() - agentTree_[agentTree_[node].left].maxY);
 
+    // 距离的平方
     const float distSqLeft =
         distLeftMinX * distLeftMinX + distLeftMaxX * distLeftMaxX +
         distLeftMinY * distLeftMinY + distLeftMaxY * distLeftMaxY;
 
+    // 与当前node的right比较，计算agent距离right的box的距离
     const float distRightMinX = std::max(
         0.0F, agentTree_[agentTree_[node].right].minX - agent->position_.x());
     const float distRightMaxX = std::max(
@@ -448,17 +457,26 @@ void KdTree::queryAgentTreeRecursive(Agent *agent, float &rangeSq, std::size_t n
         distRightMinX * distRightMinX + distRightMaxX * distRightMaxX +
         distRightMinY * distRightMinY + distRightMaxY * distRightMaxY;
 
+    // 距离left更近
     if (distSqLeft < distSqRight) {
+      // 只关心rangeSq范围内是否有其他agent
+      // [c]
+      // agent可能在left之外，所以也要判断distSqLeft < rangeSq
       if (distSqLeft < rangeSq) {
         queryAgentTreeRecursive(agent, rangeSq, agentTree_[node].left);
-
+        // [b]
+        // 假如当前是第一次遍历，agent要么在left，要么在right
+        // distSqLeft < distSqRight，说明agent在left中，虽然agent在left中，但距离right也不远 小于rangeSq
+        // 则把本来在left的agent和agentTree_[node].right进行计算，这就导致了[a]的原因
+        // 这也导致后续的 [c]
         if (distSqRight < rangeSq) {
           queryAgentTreeRecursive(agent, rangeSq, agentTree_[node].right);
         }
       }
     } else if (distSqRight < rangeSq) {
+      // [c] 同样的
       queryAgentTreeRecursive(agent, rangeSq, agentTree_[node].right);
-
+      // [b] 同样的
       if (distSqLeft < rangeSq) {
         queryAgentTreeRecursive(agent, rangeSq, agentTree_[node].left);
       }
