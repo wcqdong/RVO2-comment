@@ -303,22 +303,29 @@ void Agent::computeNewVelocity(float timeStep) {
     }
 
     /* Not yet covered. Check for collisions. */
+    // agent到obstacle1的距离的平方
     const float distSq1 = absSq(relativePosition1);
+    // agent到obstacle2的距离的平方
     const float distSq2 = absSq(relativePosition2);
 
     const float radiusSq = radius_ * radius_;
 
+    // line的向量
     const Vector2 obstacleVector = obstacle2->point_ - obstacle1->point_;
-    const float s =
-        (-relativePosition1 * obstacleVector) / absSq(obstacleVector);
+    // agent位置在obstacle1->obstacle2上的投影
+    // -relativePosition1 = position_ - obstacle1->point_, 所以relativePosition1有负号
+    const float s = (-relativePosition1 * obstacleVector) / absSq(obstacleVector);
+    // agent到line的距离
     const float distSqLine = absSq(-relativePosition1 - s * obstacleVector);
 
     Line line;
 
+    // 投影点在obstacle1->obstacle2反方向上，并且到line距离小于agent半径
     if (s < 0.0F && distSq1 <= radiusSq) {
       /* Collision with left vertex. Ignore if non-convex. */
       if (obstacle1->isConvex_) {
         line.point = Vector2(0.0F, 0.0F);
+        // 逆时针旋转90度
         line.direction =
             normalize(Vector2(-relativePosition1.y(), relativePosition1.x()));
         orcaLines_.push_back(line);
@@ -326,7 +333,7 @@ void Agent::computeNewVelocity(float timeStep) {
 
       continue;
     }
-
+    // 投影点在obstacle1->obstacle2正方向上，并且到line距离小于agent半径
     if (s > 1.0F && distSq2 <= radiusSq) {
       /* Collision with right vertex. Ignore if non-convex or if it will be
        * taken care of by neighoring obstace */

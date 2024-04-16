@@ -180,7 +180,7 @@ std::size_t RVOSimulator::addObstacle(const std::vector<Vector2> &vertices) {
       // 是一条线段，该obstacle为凸点
       if (vertices.size() == 2U) {
         obstacle->isConvex_ = true;
-      // 如果是一个形状，是否为凸点，叉乘
+      // 如果是一个多边形，是否为凸点，叉乘
       } else {
         obstacle->isConvex_ =
             leftOf(vertices[i == 0U ? vertices.size() - 1U : i - 1U],
